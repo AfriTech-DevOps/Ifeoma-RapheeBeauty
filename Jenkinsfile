@@ -3,6 +3,7 @@ pipeline {
     environment{
         SCANNER_HOME=tool 'sonar-scanner'
         DOCKERHUB_CREDENTIALS=credentials('716274dc-f41e-4e10-9f58-f501c9063a39')
+        BRANCH_NAME = "${GIT_BRANCH.split("/")[1]}"
     }
     stages{
        stage('Clean workspace'){
@@ -10,11 +11,10 @@ pipeline {
             cleanWs()
            }
        }
-       stage('GitCheckout'){
-            steps{
-                scripts{
-                    checkout scmGit(branches: [[name: '*/dev'], [name: '*/qa'], [name: '*/prod']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/AfriTech-DevOps/Ifeoma-RapheeBeauty.git']])
-                }
+       stage('Git Checkout'){
+            steps{    
+               checkout scmGit(branches: [[name: '*/dev'], [name: '*/qa'], [name: '*/prod']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/AfriTech-DevOps/Ifeoma-RapheeBeauty.git']])
+            
             }
         }
         stage('Sonarqube Analysis'){
@@ -28,7 +28,7 @@ pipeline {
         }
         stage('Quality Gate'){
             steps{
-                scripts{
+                script{
                     waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token'
                 }
             }
@@ -42,15 +42,16 @@ pipeline {
         }
         stage('Trivy File Scan'){
             steps{
-                scripts{
+                script{
                     sh 'trivy fs . > trivy_result.txt'
                 }
             }
         }
         stage('Docker Build'){
             steps{
-                scripts{
-                   sh 'docker build -t blesseddocker/ifeoma-rapheebeauty:latest .'
+                script{
+                   def imageTag = determineTargetEnvironment() 
+                   sh 'docker build -t blesseddocker/ifeoma-rapheebeauty:${imageTag} .'
                    echo "Image Build Successfully"
                     
                 }
@@ -59,15 +60,17 @@ pipeline {
 
         stage('Trivy Image Scan'){
             steps{
-                scripts{
-                    sh 'trivy image ifeoma-rapheebeauty:latest'
+                script{
+                    def imageTag = determineTargetEnvironment() 
+                    sh 'trivy image blesseddocker/ifeoma-rapheebeauty:${imageTag}'
                 }
             }
         }
         stage('Docker push'){
             steps{
-                scripts{
-                    sh "docker push blesseddocker/ifeoma-rapheebeauty:latest"
+                script{
+                    def imageTag = determineTargetEnvironment() 
+                    sh "docker push blesseddocker/ifeoma-rapheebeauty:${imageTag}"
                     echo "Push Image to Registry"
                 }
             }
@@ -75,3 +78,14 @@ pipeline {
         
     }
 }
+def determineTargetEnvironment() {
+    def branchName = env.BRANCH_NAME
+    if (branchName == 'qa') {
+        return 'qa'
+    } else if (branchName == 'prod') {
+        return 'prod'
+    } else {
+        return 'dev'
+    }
+}
+
